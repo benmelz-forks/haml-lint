@@ -70,6 +70,10 @@ module HamlLint
         @options[:autocorrect] ||= :safe
       end
 
+      parser.on('--stdin file_path', 'Get input from stdin') do |file_path|
+        @options[:stdin] = file_path
+      end
+
       parser.on('--stderr', 'Write all output to stderr') do
         @options[:stderr] = true
       end

@@ -79,18 +79,18 @@ module HamlLint
     # Runs all provided linters using the specified config against the given
     # file.
     #
-    # @param file [String] path to file to lint
+    # @param file [Hash]
     # @param linter_selector [HamlLint::LinterSelector]
     # @param config [HamlLint::Configuration]
     def collect_lints(file, linter_selector, config)
       begin
-        document = HamlLint::Document.new(File.read(file), file: file, config: config)
+        document = HamlLint::Document.new(file[:io].read, file: file[:file_path], config: config)
       rescue HamlLint::Exceptions::ParseError => e
         return [HamlLint::Lint.new(HamlLint::Linter::Syntax.new(config), file,
                                    e.line, e.to_s, :error)]
       end
 
-      linters = linter_selector.linters_for_file(file)
+      linters = linter_selector.linters_for_file(file[:file_path])
       lint_arrays = []
 
       if @autocorrect
@@ -130,13 +130,19 @@ module HamlLint
     #
     # @param config [HamlLint::Configuration]
     # @param options [Hash]
-    # @return [Array<String>]
+    # @return [Array<Hash>]
     def extract_applicable_files(config, options)
-      included_patterns = options[:files]
-      excluded_patterns = config['exclude']
-      excluded_patterns += options.fetch(:excluded_files, [])
+      if options[:stdin]
+        [{ io: $stdin, file_path: options[:stdin]}]
+      else
+        included_patterns = options[:files]
+        excluded_patterns = config['exclude']
+        excluded_patterns += options.fetch(:excluded_files, [])
 
-      HamlLint::FileFinder.new(config).find(included_patterns, excluded_patterns)
+        HamlLint::FileFinder.new(config).find(included_patterns, excluded_patterns).map do |file_path|
+          { io: File.new(file_path), file_path: file_path }
+        end
+      end
     end
 
     # Process the files and add them to the given report.
@@ -156,7 +162,7 @@ module HamlLint
     # @param report [HamlLint::Report]
     # @return [void]
     def process_file(file, report)
-      lints = @cache[file] || collect_lints(file, linter_selector, config)
+      lints = @cache[file[:file_path]] || collect_lints(file, linter_selector, config)
       lints.each { |lint| report.add_lint(lint) }
       report.finish_file(file, lints)
     end
@@ -180,7 +186,7 @@ module HamlLint
     def warm_cache
       results = Parallel.map(files) do |file|
         lints = collect_lints(file, linter_selector, config)
-        [file, lints]
+        [file[:file_path], lints]
       end
       @cache = results.to_h
     end
